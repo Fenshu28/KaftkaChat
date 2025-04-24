@@ -1,0 +1,143 @@
+# Sistema de Chat Distribuido con Apache Kafka
+
+Este proyecto implementa un sistema de chat distribuido utilizando Apache Kafka como broker de eventos. Es un excelente ejemplo práctico de cómo funcionan los eventos distribuidos en un sistema real.
+
+## Características
+
+- Mensajería en tiempo real entre múltiples clientes
+- Mensajes privados entre usuarios
+- Notificaciones de conexión/desconexión de usuarios
+- Lista de usuarios conectados
+- Interfaz gráfica intuitiva
+
+## Requisitos previos
+
+1. Java JDK 11 o superior
+2. Apache Maven
+3. Un cluster de Apache Kafka (puede ser local o remoto)
+4. Zookeeper (requerido por Kafka)
+
+## Configuración de Kafka
+
+Antes de ejecutar la aplicación, necesitas tener un servidor Kafka en funcionamiento:
+
+### Instalar y ejecutar Kafka localmente (para pruebas)
+
+1. Descarga Apache Kafka desde [kafka.apache.org](https://kafka.apache.org/downloads)
+2. Extrae el archivo descargado
+3. Inicia Zookeeper:
+   ```
+   bin/zookeeper-server-start.sh config/zookeeper.properties
+   ```
+4. Inicia el servidor Kafka:
+   ```
+   bin/kafka-server-start.sh config/server.properties
+   ```
+
+### Crear los tópicos necesarios
+
+Ejecuta los siguientes comandos para crear los tópicos:
+
+```bash
+bin/kafka-topics.sh --create --bootstrap-server localhost:9092 --replication-factor 1 --partitions 3 --topic chat-messages
+
+bin/kafka-topics.sh --create --bootstrap-server localhost:9092 --replication-factor 1 --partitions 3 --topic user-status
+
+bin/kafka-topics.sh --create --bootstrap-server localhost:9092 --replication-factor 1 --partitions 3 --topic private-messages
+```
+
+## Compilación
+
+Para compilar el proyecto, ejecuta:
+
+```bash
+mvn clean package
+```
+
+Esto generará un archivo JAR ejecutable con todas las dependencias incluidas en el directorio `target/`.
+
+## Ejecución
+
+Puedes ejecutar la aplicación con:
+
+```bash
+java -jar target/kafka-chat-1.0-SNAPSHOT-jar-with-dependencies.jar
+```
+
+Al iniciar, la aplicación mostrará un diálogo para ingresar:
+- La dirección del servidor Kafka (por defecto: localhost:9092)
+- Tu nombre de usuario
+
+## Uso en diferentes máquinas
+
+Para usar el chat en diferentes máquinas:
+
+1. Asegúrate de que todas las máquinas puedan acceder al servidor Kafka
+   - Si estás utilizando Kafka localmente, configura tu servidor para aceptar conexiones externas:
+     - Edita `config/server.properties` y cambia `listeners=PLAINTEXT://localhost:9092` a `listeners=PLAINTEXT://0.0.0.0:9092`
+     - Añade `advertised.listeners=PLAINTEXT://tu_ip_pública:9092`
+     - Reinicia el servidor Kafka
+
+2. Compila el JAR y distribúyelo a las diferentes máquinas
+
+3. En cada máquina, ejecuta el JAR con la dirección correcta del servidor Kafka:
+   - Cuando la aplicación solicite la dirección del servidor, introduce `ip_del_servidor_kafka:9092`
+
+## Arquitectura del Sistema
+
+### Componentes principales
+
+1. **ChatMessage**: Clase que representa los mensajes del chat
+2. **KafkaConfig**: Configuración centralizada para Kafka
+3. **ChatProducer**: Maneja el envío de mensajes a Kafka
+4. **ChatConsumer**: Recibe mensajes de Kafka
+5. **ChatGUI**: Interfaz gráfica de usuario
+
+### Tópicos de Kafka
+
+- **chat-messages**: Para mensajes generales del chat
+- **user-status**: Para eventos de conexión/desconexión
+- **private-messages**: Para mensajes privados entre usuarios
+
+## Relación con la Teoría de Eventos Distribuidos
+
+Este sistema implementa varios conceptos clave de eventos distribuidos:
+
+1. **Desacoplamiento**: Los clientes de chat no se comunican directamente entre sí, sino a través del broker Kafka.
+
+2. **Comunicación asíncrona**: Los mensajes se envían sin esperar respuesta inmediata.
+
+3. **Publicación/Suscripción**: Los clientes publican mensajes en tópicos y reciben los que les interesan.
+
+4. **Escalabilidad**: El sistema puede manejar un gran número de usuarios y mensajes.
+
+5. **Tolerancia a fallos**: Si un cliente se desconecta, los demás siguen funcionando normalmente.
+
+6. **Persistencia de eventos**: Kafka almacena los mensajes, permitiendo que los clientes que se conecten más tarde puedan recibir mensajes anteriores.
+
+## Extensiones posibles
+
+Algunas ideas para extender este proyecto:
+
+1. Historial de mensajes persistente
+2. Grupos/canales de chat
+3. Envío de archivos
+4. Cifrado de mensajes
+5. Autenticación de usuarios
+6. Indicador de "escribiendo..."
+7. Confirmaciones de lectura
+
+## Solución de problemas
+
+**Error de conexión a Kafka**:
+- Verifica que Kafka esté ejecutándose
+- Comprueba que la dirección y puerto sean correctos
+- Asegúrate de que no haya firewalls bloqueando la conexión
+
+**No se reciben mensajes**:
+- Verifica las suscripciones a los tópicos
+- Comprueba la configuración del grupo de consumidores
+
+## Licencia
+
+Este proyecto está licenciado bajo la Licencia MIT.
