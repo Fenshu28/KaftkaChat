@@ -14,35 +14,107 @@ Este proyecto implementa un sistema de chat distribuido utilizando Apache Kafka 
 
 1. Java JDK 11 o superior
 2. Apache Maven
-3. Un cluster de Apache Kafka (puede ser local o remoto)
-4. Zookeeper (requerido por Kafka)
+3. Apache Kafka 4.0 (con modo KRaft, sin necesidad de ZooKeeper)
 
-## Configuración de Kafka
+## Instalación y Configuración
 
-Antes de ejecutar la aplicación, necesitas tener un servidor Kafka en funcionamiento:
-
-### Instalar y ejecutar Kafka localmente (para pruebas)
-
-1. Descarga Apache Kafka desde [kafka.apache.org](https://kafka.apache.org/downloads)
-2. Extrae el archivo descargado
-3. Inicia Zookeeper:
-   ```
-   bin/zookeeper-server-start.sh config/zookeeper.properties
-   ```
-4. Inicia el servidor Kafka:
-   ```
-   bin/kafka-server-start.sh config/server.properties
-   ```
-
-### Crear los tópicos necesarios
-
-Ejecuta los siguientes comandos para crear los tópicos:
+### 1. Instalar Java (JDK)
 
 ```bash
+# Para sistemas basados en Debian/Ubuntu
+sudo apt update
+sudo apt install default-jdk
+
+# Para sistemas basados en Red Hat/CentOS
+sudo yum install java-11-openjdk
+
+# Verifica la instalación
+java -version
+```
+
+### 2. Instalar Kafka 4.0
+
+```bash
+# Descargar la distribución binaria de Kafka
+wget https://downloads.apache.org/kafka/4.0.0/kafka_2.13-4.0.0.tgz
+
+# Extraer el archivo
+tar -xzf kafka_2.13-4.0.0.tgz
+
+# Mover a tu directorio home para mejor manejo de permisos
+mkdir -p ~/kafka
+cp -r kafka_2.13-4.0.0/* ~/kafka/
+cd ~/kafka
+```
+
+### 3. Configurar Kafka en modo KRaft (sin ZooKeeper)
+
+Kafka 4.0 puede ejecutarse sin ZooKeeper usando el modo KRaft. Sigue estos pasos para configurarlo:
+
+#### 3.1 Crear archivo de configuración para KRaft
+
+```bash
+mkdir -p config/kraft
+cat > config/kraft/server.properties << EOL
+# ID y rol del nodo
+node.id=1
+process.roles=broker,controller
+
+# Configuración del controlador
+controller.quorum.voters=1@localhost:9093
+controller.listener.names=CONTROLLER
+
+# Listeners y configuración de red
+listeners=PLAINTEXT://:9092,CONTROLLER://:9093
+inter.browser.listener.name=PLAINTEXT
+advertised.listeners=PLAINTEXT://localhost:9092
+listener.security.protocol.map=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+
+# Directorio de logs
+log.dirs=~/kafka/logs
+
+# Configuraciones básicas
+num.partitions=1
+default.replication.factor=1
+min.insync.replicas=1
+offsets.topic.replication.factor=1
+transaction.state.log.replication.factor=1
+transaction.state.log.min.isr=1
+EOL
+```
+
+#### 3.2 Crear directorio para logs
+
+```bash
+mkdir -p ~/kafka/logs
+```
+
+#### 3.3 Generar un ID de clúster y formatear el almacenamiento
+
+```bash
+# Generar un ID de clúster
+bin/kafka-storage.sh random-uuid
+# Ejemplo de salida: Df-MLVT1QQqpguSUUW9q-g
+
+# Formatear el almacenamiento usando el ID generado
+bin/kafka-storage.sh format -t TU_UUID_GENERADO -c config/kraft/server.properties
+# Reemplaza TU_UUID_GENERADO con el valor obtenido en el paso anterior
+```
+
+### 4. Iniciar el servidor Kafka
+
+```bash
+bin/kafka-server-start.sh config/kraft/server.properties
+```
+
+### 5. Crear los tópicos necesarios
+
+En una nueva terminal, crea los tópicos necesarios para el chat:
+
+```bash
+cd ~/kafka
 bin/kafka-topics.sh --create --bootstrap-server localhost:9092 --replication-factor 1 --partitions 3 --topic chat-messages
-
 bin/kafka-topics.sh --create --bootstrap-server localhost:9092 --replication-factor 1 --partitions 3 --topic user-status
-
 bin/kafka-topics.sh --create --bootstrap-server localhost:9092 --replication-factor 1 --partitions 3 --topic private-messages
 ```
 
@@ -74,8 +146,9 @@ Para usar el chat en diferentes máquinas:
 
 1. Asegúrate de que todas las máquinas puedan acceder al servidor Kafka
    - Si estás utilizando Kafka localmente, configura tu servidor para aceptar conexiones externas:
-     - Edita `config/server.properties` y cambia `listeners=PLAINTEXT://localhost:9092` a `listeners=PLAINTEXT://0.0.0.0:9092`
-     - Añade `advertised.listeners=PLAINTEXT://tu_ip_pública:9092`
+     - En tu archivo `config/kraft/server.properties`, asegúrate de tener:
+     - `listeners=PLAINTEXT://0.0.0.0:9092,CONTROLLER://:9093`
+     - `advertised.listeners=PLAINTEXT://tu_ip_pública:9092`
      - Reinicia el servidor Kafka
 
 2. Compila el JAR y distribúyelo a las diferentes máquinas
@@ -137,6 +210,14 @@ Algunas ideas para extender este proyecto:
 **No se reciben mensajes**:
 - Verifica las suscripciones a los tópicos
 - Comprueba la configuración del grupo de consumidores
+
+**Problemas con permisos al iniciar Kafka**:
+- Si intentas ejecutar Kafka en `/opt` u otro directorio del sistema, puedes tener problemas de permisos
+- Usa `sudo` o ejecuta Kafka desde tu directorio home como se indica en esta guía
+
+**Error con el archivo server.properties**:
+- Verifica la configuración del archivo `config/kraft/server.properties`
+- Asegúrate de tener la propiedad `controller.listener.names=CONTROLLER` presente
 
 ## Licencia
 
