@@ -21,8 +21,17 @@ import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.text.DefaultCaret;
+import javax.swing.JPopupMenu;
+import javax.swing.JTextPane;
 
 import com.formdev.flatlaf.FlatLightLaf;
+import com.google.gson.Gson;
+import java.awt.Font;
+import java.io.File;
+import java.io.IOException;
+import java.util.Date;
+import javax.swing.JFileChooser;
+import org.apache.kafka.clients.producer.ProducerRecord;
 
 /**
  * Interfaz gráfica para el cliente de chat basado en Kafka.
@@ -30,10 +39,14 @@ import com.formdev.flatlaf.FlatLightLaf;
 public class ChatGUI extends JFrame implements ChatConsumer.MessageListener {
 
     private JTextArea chatArea;
+    private JTextPane chatPane; // Reemplazamos JTextArea con JTextPane para mejor soporte de imágenes
     private JTextField messageField;
     private JTextField recipientField;
     private JButton sendButton;
+    private JButton emojiButton;
+    private JPopupMenu emojiPopup;
     private JButton privateButton;
+    private JButton imageButton;
     private JList<String> userList;
     private DefaultListModel<String> userListModel;
 
@@ -41,6 +54,7 @@ public class ChatGUI extends JFrame implements ChatConsumer.MessageListener {
     private final ChatProducer producer;
     private final ChatConsumer consumer;
     private final Thread consumerThread;
+    private final Gson gson = new Gson();
 
     /**
      * Constructor que inicializa la GUI y los componentes de Kafka.
@@ -84,17 +98,26 @@ public class ChatGUI extends JFrame implements ChatConsumer.MessageListener {
         JPanel mainPanel = new JPanel(new BorderLayout(5, 5));
         mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
-        // Área de chat
-        chatArea = new JTextArea();
-        chatArea.setEditable(false);
-        chatArea.setWrapStyleWord(true);
-        chatArea.setLineWrap(true);
+        // Área de chat con JTextPane en lugar de JTextArea
+        chatPane = new JTextPane();
+        chatPane.setEditable(false);
+        chatPane.setFont(new Font("Segoe UI", Font.PLAIN, 14));
 
-        // Auto-scroll del área de chat
-        DefaultCaret caret = (DefaultCaret) chatArea.getCaret();
-        caret.setUpdatePolicy(DefaultCaret.ALWAYS_UPDATE);
+        // Configurar para mostrar contenido HTML
+        chatPane.setContentType("text/html");
 
-        JScrollPane chatScrollPane = new JScrollPane(chatArea);
+        // CSS inicial para el área de chat
+        String initialHTML = "<html><head><style type='text/css'>"
+                + "body { font-family: 'Segoe UI', sans-serif; font-size: 14pt; }"
+                + "img { max-width: 280px; max-height: 280px; }"
+                + ".timestamp { color: #666; }"
+                + ".sender { font-weight: bold; color: #0066cc; }"
+                + ".private { color: #990000; font-style: italic; }"
+                + ".status { color: #006600; font-style: italic; }"
+                + "</style></head><body></body></html>";
+        chatPane.setText(initialHTML);
+
+        JScrollPane chatScrollPane = new JScrollPane(chatPane);
         chatScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
 
         // Panel de entrada de mensajes
@@ -102,12 +125,34 @@ public class ChatGUI extends JFrame implements ChatConsumer.MessageListener {
 
         messageField = new JTextField();
         messageField.addActionListener(e -> sendMessage());
+        messageField.setFont(new Font("Segoe UI", Font.PLAIN, 14));
 
+        // Panel para botones (emojis, imágenes y enviar)
+        JPanel buttonPanel = new JPanel(new GridLayout(1, 3, 5, 0));
+
+        // Botón de emoji
+        emojiButton = new JButton("😀");
+        emojiButton.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 18));
+        emojiButton.setToolTipText("Insertar emoji");
+        emojiButton.setFocusPainted(false);
+        emojiButton.addActionListener(e -> showEmojiPopup());
+        buttonPanel.add(emojiButton);
+
+        // Botón de imagen
+        imageButton = new JButton("🖼️");
+        imageButton.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 18));
+        imageButton.setToolTipText("Enviar imagen");
+        imageButton.setFocusPainted(false);
+        imageButton.addActionListener(e -> selectAndSendImage());
+        buttonPanel.add(imageButton);
+
+        // Botón enviar
         sendButton = new JButton("Enviar");
         sendButton.addActionListener(e -> sendMessage());
+        buttonPanel.add(sendButton);
 
         inputPanel.add(messageField, BorderLayout.CENTER);
-        inputPanel.add(sendButton, BorderLayout.EAST);
+        inputPanel.add(buttonPanel, BorderLayout.EAST);
 
         // Panel de mensajes privados
         JPanel privatePanel = new JPanel(new BorderLayout(5, 0));
@@ -147,6 +192,32 @@ public class ChatGUI extends JFrame implements ChatConsumer.MessageListener {
         mainPanel.add(bottomPanel, BorderLayout.SOUTH);
 
         add(mainPanel);
+
+        // Crear el popup de emojis
+        emojiPopup = new JPopupMenu();
+        EmojiSelector emojiSelector = new EmojiSelector(e -> {
+            String emoji = e.getActionCommand();
+            insertEmoji(emoji);
+            emojiPopup.setVisible(false);
+        });
+        emojiPopup.add(emojiSelector);
+    }
+
+    /**
+     * Muestra el popup selector de emojis.
+     */
+    private void showEmojiPopup() {
+        emojiPopup.show(emojiButton, 0, -emojiPopup.getPreferredSize().height);
+    }
+
+    /**
+     * Inserta un emoji en el campo de texto del mensaje.
+     *
+     * @param emoji El emoji a insertar
+     */
+    private void insertEmoji(String emoji) {
+        messageField.replaceSelection(emoji);
+        messageField.requestFocusInWindow();
     }
 
     /**
@@ -177,6 +248,125 @@ public class ChatGUI extends JFrame implements ChatConsumer.MessageListener {
 
             messageField.setText("");
             messageField.requestFocus();
+        }
+    }
+
+    /**
+     * Muestra un diálogo para seleccionar una imagen y la envía
+     */
+    private void selectAndSendImage() {
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
+                "Imágenes", "jpg", "jpeg", "png", "gif", "bmp"));
+
+        int result = fileChooser.showOpenDialog(this);
+        if (result == JFileChooser.APPROVE_OPTION) {
+            File selectedFile = fileChooser.getSelectedFile();
+
+            try {
+                // Convertir imagen a Base64
+                ImageUtils.ImageData imageData = ImageUtils.imageToBase64(selectedFile);
+
+                // Verificar si es un mensaje privado o general
+                String recipient = recipientField.getText().trim();
+                if (!recipient.isEmpty()) {
+                    // Mensaje privado con imagen
+                    producer.sendPrivateImage(recipient, imageData.getBase64(), imageData.getFormat());
+
+                    // Mostrar en nuestra propia ventana
+                    String privateImageMsg = String.format(
+                            "<div><span class='timestamp'>[%tT]</span> <span class='private'>[Imagen privada para %s]</span></div>",
+                            new Date(), recipient);
+                    appendToChat(privateImageMsg);
+
+                    // Mostrar la imagen
+                    displayImage(imageData.getBase64(), imageData.getFormat());
+                } else {
+                    // Mensaje general con imagen
+                    producer.sendImage(imageData.getBase64(), imageData.getFormat());
+                }
+
+            } catch (IOException e) {
+                JOptionPane.showMessageDialog(this,
+                        "Error al procesar la imagen: " + e.getMessage(),
+                        "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    /**
+     * Añade contenido HTML al área de chat
+     *
+     * @param htmlContent Contenido HTML a añadir
+     */
+    private void appendToChat(String htmlContent) {
+        // Para el JTextArea original
+        if (chatPane == null && chatArea != null) {
+            chatArea.append(htmlContent.replaceAll("<[^>]*>", "") + "\n");
+            return;
+        }
+
+        // Para el JTextPane con soporte HTML
+        try {
+            // Obtener el documento actual
+            javax.swing.text.Document doc = chatPane.getDocument();
+
+            // Obtener el editor del kit para manipular el documento HTML
+            javax.swing.text.html.HTMLEditorKit editorKit = (javax.swing.text.html.HTMLEditorKit) chatPane.getEditorKit();
+            javax.swing.text.html.HTMLDocument htmlDoc = (javax.swing.text.html.HTMLDocument) doc;
+
+            // Insertar el HTML al final del documento
+            editorKit.insertHTML(htmlDoc, htmlDoc.getLength(), htmlContent, 0, 0, null);
+
+            // Hacer scroll al final
+            chatPane.setCaretPosition(doc.getLength());
+        } catch (Exception e) {
+            System.err.println("Error al añadir contenido al chat: " + e.getMessage());
+
+            // Fallback a texto plano si falla el HTML
+            if (chatPane != null) {
+                chatPane.setText(chatPane.getText() + htmlContent.replaceAll("<[^>]*>", "") + "\n");
+            }
+        }
+    }
+
+    /**
+     * Muestra la imagen en el área de chat
+     *
+     * @param base64Image Imagen codificada en Base64
+     * @param format Formato de la imagen
+     */
+    private void displayImage(String base64Image, String format) {
+        try {
+            // Para chatPane (JTextPane con soporte HTML)
+            if (chatPane != null) {
+                // Crear el HTML para mostrar la imagen
+                String imgHtml = String.format(
+                        "<div style='margin: 5px 0'><img src='data:image/%s;base64,%s' style='max-width: 280px; max-height: 280px;'/></div>",
+                        format, base64Image);
+
+                // Añadir al chat
+                appendToChat(imgHtml);
+            } else if (chatArea != null) {
+                // Versión alternativa para chatArea (JTextArea sin soporte HTML)
+                // Descodificar la imagen y mostrarla como un JLabel bajo el área de texto
+                JLabel imageLabel = ImageUtils.base64ToImageLabel(base64Image, format);
+
+                // Añadir la imagen como un componente separado bajo el área de chat
+                // (Esto requeriría modificar la estructura del GUI para soportar componentes dinámicos)
+                // Esta es una solución simplificada: solo mostrar "[IMAGEN]" en el área de chat
+                chatArea.append("[IMAGEN RECIBIDA - Sin soporte de visualización en modo texto]\n");
+            }
+        } catch (Exception e) {
+            System.err.println("Error al mostrar imagen: " + e.getMessage());
+
+            // Notificar el error en el chat
+            String errorMsg = "[Error al mostrar imagen: " + e.getMessage() + "]";
+            if (chatPane != null) {
+                appendToChat("<div style='color:red'>" + errorMsg + "</div>");
+            } else if (chatArea != null) {
+                chatArea.append(errorMsg + "\n");
+            }
         }
     }
 
@@ -226,9 +416,24 @@ public class ChatGUI extends JFrame implements ChatConsumer.MessageListener {
      */
     public static void main(String[] args) {
         try {
-            UIManager.setLookAndFeel(new FlatLightLaf());
+            // Usar FlatLaf con tema personalizado
+            FlatLightLaf.setup();
+
+            // Personalizar colores y componentes
+            UIManager.put("Component.arrowType", "chevron");
+            UIManager.put("Button.arc", 10);
+            UIManager.put("Component.arc", 8);
+            UIManager.put("TextComponent.arc", 8);
+            UIManager.put("ScrollBar.thumbArc", 8);
+            UIManager.put("ScrollBar.width", 14);
+
+            // Colores personalizados
+            UIManager.put("TextField.foreground", new java.awt.Color(45, 45, 45));
+            UIManager.put("TextField.background", new java.awt.Color(252, 252, 252));
+            UIManager.put("Button.foreground", new java.awt.Color(245, 245, 245));
+            UIManager.put("Button.background", new java.awt.Color(90, 170, 235));
         } catch (Exception ex) {
-            System.err.println("Failed to initialize LaF");
+            System.err.println("Failed to initialize LaF: " + ex);
         }
 
         // Mostrar diálogo de configuración

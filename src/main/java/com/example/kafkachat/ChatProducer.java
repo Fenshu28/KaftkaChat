@@ -111,6 +111,53 @@ public class ChatProducer {
     }
 
     /**
+     * Envía una imagen al canal general.
+     *
+     * @param imageBase64 Imagen codificada en Base64
+     * @param imageFormat Formato de la imagen (png, jpg, etc.)
+     */
+    public void sendImage(String imageBase64, String imageFormat) {
+        ChatMessage message = new ChatMessage(username, imageBase64, imageFormat, "IMAGE");
+        String jsonMessage = gson.toJson(message);
+
+        ProducerRecord<String, String> record = new ProducerRecord<>(
+                KafkaConfig.TOPIC_MESSAGES,
+                username, // Usar el nombre de usuario como clave
+                jsonMessage
+        );
+
+        producer.send(record, (metadata, exception) -> {
+            if (exception != null) {
+                System.err.println("Error al enviar imagen: " + exception.getMessage());
+            }
+        });
+    }
+
+    /**
+     * Envía una imagen privada a un usuario específico.
+     *
+     * @param recipient Destinatario del mensaje
+     * @param imageBase64 Imagen codificada en Base64
+     * @param imageFormat Formato de la imagen (png, jpg, etc.)
+     */
+    public void sendPrivateImage(String recipient, String imageBase64, String imageFormat) {
+        ChatMessage message = new ChatMessage(username, recipient, imageBase64, imageFormat, "IMAGE");
+        String jsonMessage = gson.toJson(message);
+
+        ProducerRecord<String, String> record = new ProducerRecord<>(
+                KafkaConfig.TOPIC_PRIVATE_MESSAGES,
+                recipient, // Usar el destinatario como clave para particionamiento
+                jsonMessage
+        );
+
+        producer.send(record, (metadata, exception) -> {
+            if (exception != null) {
+                System.err.println("Error al enviar imagen privada: " + exception.getMessage());
+            }
+        });
+    }
+
+    /**
      * Cierra el productor y libera recursos.
      */
     public void close() {
