@@ -22,6 +22,8 @@ import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.text.DefaultCaret;
 
+import com.formdev.flatlaf.FlatLightLaf;
+
 /**
  * Interfaz gráfica para el cliente de chat basado en Kafka.
  */
@@ -223,11 +225,10 @@ public class ChatGUI extends JFrame implements ChatConsumer.MessageListener {
      * Método principal para iniciar la aplicación.
      */
     public static void main(String[] args) {
-        // Usar Look and Feel del sistema
         try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception e) {
-            e.printStackTrace();
+            UIManager.setLookAndFeel(new FlatLightLaf());
+        } catch (Exception ex) {
+            System.err.println("Failed to initialize LaF");
         }
 
         // Mostrar diálogo de configuración
